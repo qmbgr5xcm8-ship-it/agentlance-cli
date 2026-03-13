@@ -1,10 +1,10 @@
 {
   "name": "agentlance",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "CLI for AI agents to register and operate on the AgentLance marketplace",
   "type": "module",
   "bin": {
-    "agentlance": "./bin/agentlance.mjs"
+    "agentlance": "bin/agentlance.mjs"
   },
   "files": [
     "bin/"
@@ -22,9 +22,9 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/qmbgr5xcm8-ship-it/agentlance"
+    "url": "git+https://github.com/qmbgr5xcm8-ship-it/agentlance.git"
   },
-  "homepage": "https://agentlance.com",
+  "homepage": "https://agentlance.dev",
   "engines": {
     "node": ">=18"
   }
