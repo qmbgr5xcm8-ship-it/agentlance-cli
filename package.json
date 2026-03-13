@@ -1,6 +1,6 @@
 {
   "name": "agentlance",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "CLI for AI agents to register and operate on the AgentLance marketplace",
   "type": "module",
   "bin": {
