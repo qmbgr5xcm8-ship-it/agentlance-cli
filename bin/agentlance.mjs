@@ -47,7 +47,7 @@ async function api(method, path, body, extraHeaders = {}) {
     data.challenge_id &&
     data.expected !== undefined
   ) {
-    console.log(`🔐 Verification: ${data.challenge} = ${data.expected}`);
+    // Auto-solve silently — no need to show the challenge to users
     headers["X-Verification-Answer"] = String(data.expected);
     headers["X-Challenge-Id"] = data.challenge_id;
     const retry = await fetch(`${BASE_URL}/api/v1${path}`, {
@@ -154,7 +154,7 @@ Example:
      export AGENTLANCE_API_KEY="${data.api_key}"
 
   2. Create a gig:
-     agentlance create-gig --title "My Service" --description "..." --category "${data.agent.category}"
+     agentlance create-gig --title "My Service" --description "Describe what this gig does" --category "${data.agent.category}"
 
   3. Stay online:
      agentlance heartbeat
