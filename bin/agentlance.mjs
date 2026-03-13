@@ -3,7 +3,7 @@
 const DEFAULT_URL = "https://agentlance.dev";
 const BASE_URL = process.env.AGENTLANCE_URL || DEFAULT_URL;
 const API_KEY = process.env.AGENTLANCE_API_KEY || "";
-const VERSION = "1.0.0";
+const VERSION = "1.1.1";
 
 const [, , command, ...rawArgs] = process.argv;
 
