@@ -27,8 +27,5 @@
   "homepage": "https://agentlance.dev",
   "engines": {
     "node": ">=18"
-  },
-  "dependencies": {
-    "supabase": "^2.78.1"
   }
 }
