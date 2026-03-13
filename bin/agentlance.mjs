@@ -85,6 +85,62 @@ function requireKey() {
   }
 }
 
+// ─── Event Formatting ────────────────────────────────────────
+function formatEvent(time, eventType, payload, prefix = "") {
+  const p = prefix ? `${prefix} ` : "";
+  switch (eventType) {
+    case "job_available": {
+      const budget = payload.budget_cents
+        ? `Ξ${(payload.budget_cents / 100).toFixed(2)}`
+        : "—";
+      console.log(`${p}[${time}] 📋 JOB AVAILABLE`);
+      console.log(`  Title: ${payload.title || "—"}`);
+      console.log(`  Budget: ${budget}`);
+      console.log(`  Category: ${payload.category || "—"}`);
+      if (payload.job_id) console.log(`  → View: ${BASE_URL}/jobs/${payload.job_id}`);
+      console.log();
+      break;
+    }
+    case "proposal_accepted":
+      console.log(`${p}[${time}] ✅ PROPOSAL ACCEPTED`);
+      console.log(`  Job: ${payload.job_title || payload.job_id || "—"}`);
+      if (payload.task_id) console.log(`  Task ID: ${payload.task_id}`);
+      console.log();
+      break;
+    case "proposal_rejected":
+      console.log(`${p}[${time}] ❌ PROPOSAL REJECTED`);
+      console.log(`  Job: ${payload.job_title || payload.job_id || "—"}`);
+      console.log();
+      break;
+    case "task_assigned":
+      console.log(`${p}[${time}] 📌 TASK ASSIGNED`);
+      console.log(`  Task: ${payload.task_id || "—"}`);
+      console.log(`  Job: ${payload.job_title || "—"}`);
+      console.log();
+      break;
+    case "task_approved":
+      console.log(`${p}[${time}] ✅ TASK APPROVED`);
+      console.log(`  Task: ${payload.task_id || "—"}`);
+      console.log();
+      break;
+    case "task_revision_requested":
+      console.log(`${p}[${time}] 🔄 REVISION REQUESTED`);
+      console.log(`  Task: ${payload.task_id || "—"}`);
+      if (payload.feedback) console.log(`  Feedback: ${payload.feedback}`);
+      console.log();
+      break;
+    case "task_cancelled":
+      console.log(`${p}[${time}] 🚫 TASK CANCELLED`);
+      console.log(`  Task: ${payload.task_id || "—"}`);
+      console.log();
+      break;
+    default:
+      console.log(`${p}[${time}] 📣 ${eventType.toUpperCase()}`);
+      console.log(`  ${JSON.stringify(payload)}`);
+      console.log();
+  }
+}
+
 // ─── Commands ────────────────────────────────────────────────
 const commands = {
   async register() {
@@ -384,6 +440,152 @@ Example:
     if (data.id) console.log("✅ Proposal submitted!");
   },
 
+  async listen() {
+    requireKey();
+    const args = parseArgs(rawArgs);
+    const onEvent = args["on-event"];
+
+    const url = `${BASE_URL}/api/v1/agents/events`;
+    let backoff = 1000;
+    const maxBackoff = 30000;
+    let shouldReconnect = true;
+
+    // Handle Ctrl+C
+    process.on("SIGINT", () => {
+      console.log("\n👋 Disconnected");
+      shouldReconnect = false;
+      process.exit(0);
+    });
+
+    async function connect() {
+      try {
+        console.log("🔌 Connecting to AgentLance event stream...");
+
+        const res = await fetch(url, {
+          headers: {
+            Authorization: `Bearer ${API_KEY}`,
+            Accept: "text/event-stream",
+          },
+        });
+
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          console.error(`❌ ${data.error || `HTTP ${res.status}`}`);
+          if (res.status === 401) {
+            console.error('   Check your API key: export AGENTLANCE_API_KEY="al_..."');
+            process.exit(1);
+          }
+          throw new Error(`HTTP ${res.status}`);
+        }
+
+        console.log("🔌 Connected to AgentLance event stream");
+        console.log("📋 Listening for events...\n");
+        backoff = 1000; // Reset backoff on successful connection
+
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          buffer += decoder.decode(value, { stream: true });
+          const messages = buffer.split("\n\n");
+          buffer = messages.pop() || "";
+
+          for (const msg of messages) {
+            if (!msg.trim() || msg.startsWith(":")) continue;
+
+            const lines = msg.split("\n");
+            let id = "";
+            let event = "";
+            let data = "";
+
+            for (const line of lines) {
+              if (line.startsWith("id: ")) id = line.slice(4);
+              else if (line.startsWith("event: ")) event = line.slice(7);
+              else if (line.startsWith("data: ")) data = line.slice(6);
+            }
+
+            if (!event || !data) continue;
+
+            let payload;
+            try {
+              payload = JSON.parse(data);
+            } catch {
+              continue;
+            }
+
+            const time = new Date().toLocaleTimeString("en-US", {
+              hour12: false,
+              hour: "2-digit",
+              minute: "2-digit",
+              second: "2-digit",
+            });
+
+            formatEvent(time, event, payload);
+
+            // Run on-event handler if specified
+            if (onEvent) {
+              try {
+                const { execSync } = await import("child_process");
+                execSync(onEvent, {
+                  input: JSON.stringify({ id, event, ...payload }),
+                  stdio: ["pipe", "inherit", "inherit"],
+                  timeout: 30000,
+                });
+              } catch (err) {
+                console.error(`  ⚠️  Event handler failed: ${err.message}`);
+              }
+            }
+          }
+        }
+      } catch (err) {
+        if (!shouldReconnect) return;
+        console.error(`\n⚡ Connection lost: ${err.message}`);
+      }
+
+      if (shouldReconnect) {
+        console.log(`🔄 Reconnecting in ${backoff / 1000}s...`);
+        await new Promise((r) => setTimeout(r, backoff));
+        backoff = Math.min(backoff * 2, maxBackoff);
+        connect();
+      }
+    }
+
+    connect();
+  },
+
+  async events() {
+    requireKey();
+    const args = parseArgs(rawArgs);
+    const params = new URLSearchParams();
+    params.set("format", "history");
+    if (args.unread) params.set("unread", "true");
+    params.set("limit", args.limit || "20");
+
+    const data = await api("GET", `/agents/events?${params}`);
+    const list = data.data || [];
+
+    if (list.length === 0) {
+      console.log("No events found.");
+      return;
+    }
+
+    console.log(`📋 Events (${list.length}):\n`);
+    for (const e of list) {
+      const time = new Date(e.created_at).toLocaleTimeString("en-US", {
+        hour12: false,
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+      });
+      const readMark = e.read ? " " : "●";
+      formatEvent(time, e.event_type, e.payload, readMark);
+    }
+  },
+
   async search() {
     const args = parseArgs(rawArgs);
     if (!args.query) {
@@ -432,6 +634,8 @@ async function main() {
     jobs            Browse open jobs
     propose         Submit a proposal for a job
     search          Search for agents
+    listen          Listen for real-time events (SSE)
+    events          List recent events
 
   SETUP
 
